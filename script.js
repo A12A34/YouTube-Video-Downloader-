@@ -1,395 +1,446 @@
-// YouTube Video Downloader Script with Library & Search
-
-// Configuration
-const API_URL = 'http://localhost:3000'; // Backend server URL
-
-// Video Library Management
+// Video Library Storage
 class VideoLibrary {
     constructor() {
-        this.videos = this.loadVideos();
+        this.storageKey = 'youtube_library';
+        this.videos = this.loadFromStorage();
     }
 
-    loadVideos() {
-        const stored = localStorage.getItem('videoLibrary');
-        return stored ? JSON.parse(stored) : [];
+    loadFromStorage() {
+        const data = localStorage.getItem(this.storageKey);
+        return data ? JSON.parse(data) : [];
     }
 
-    saveVideos() {
-        localStorage.setItem('videoLibrary', JSON.stringify(this.videos));
+    saveToStorage() {
+        localStorage.setItem(this.storageKey, JSON.stringify(this.videos));
+        updateLibraryCount();
     }
 
-    addVideo(videoData) {
-        // Check if video already exists
-        const exists = this.videos.find(v => v.id === videoData.id);
+    add(video) {
+        const exists = this.videos.some(v => v.id === video.id);
         if (!exists) {
-            this.videos.unshift(videoData);
-            this.saveVideos();
+            this.videos.unshift({
+                ...video,
+                savedAt: new Date().toISOString()
+            });
+            this.saveToStorage();
             return true;
         }
         return false;
     }
 
-    removeVideo(videoId) {
+    remove(videoId) {
         this.videos = this.videos.filter(v => v.id !== videoId);
-        this.saveVideos();
+        this.saveToStorage();
     }
 
-    getVideos() {
+    clear() {
+        this.videos = [];
+        this.saveToStorage();
+    }
+
+    getAll() {
         return this.videos;
     }
 }
 
 const library = new VideoLibrary();
+let currentVideo = null;
 
-document.addEventListener('DOMContentLoaded', function () {
-    const downloadBtn = document.getElementById('downloadBtn');
-    const videoURL = document.getElementById('videoURL');
-    const message = document.getElementById('message');
-    const searchBtn = document.getElementById('searchBtn');
-    const searchQuery = document.getElementById('searchQuery');
-    const searchResults = document.getElementById('searchResults');
-    const libraryGrid = document.getElementById('libraryGrid');
-    const videoPlayer = document.getElementById('videoPlayer');
-    const playerContainer = document.getElementById('playerContainer');
-    const closePlayer = document.getElementById('closePlayer');
-    const minimizePlayer = document.getElementById('minimizePlayer');
-
-    // Initialize library display
+document.addEventListener('DOMContentLoaded', () => {
     displayLibrary();
+    updateLibraryCount();
 
-    // Add enter key support
-    videoURL.addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-            handleDownload();
-        }
+    // Event listeners for inputs
+    const downloadInput = document.getElementById('downloadInput');
+    const searchInput = document.getElementById('searchInput');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const searchBtn = document.getElementById('searchBtn');
+
+    if (downloadInput) {
+        downloadInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') getVideoInfo();
+        });
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchVideos();
+        });
+    }
+
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', getVideoInfo);
+    }
+
+    if (searchBtn) {
+        searchBtn.addEventListener('click', searchVideos);
+    }
+
+    // Tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            switchTab(btn.dataset.tab);
+        });
     });
 
-    searchQuery.addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') {
-            handleSearch();
-        }
+    // Close modal on Esc
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closePlayer();
     });
-
-    downloadBtn.addEventListener('click', handleDownload);
-    searchBtn.addEventListener('click', handleSearch);
-    closePlayer.addEventListener('click', closeVideoPlayer);
-    minimizePlayer.addEventListener('click', function () {
-        playerContainer.classList.toggle('minimized');
-    });
-
-
-
-    function handleDownload() {
-        const url = videoURL.value.trim();
-
-        // Clear previous messages
-        message.textContent = '';
-        message.className = '';
-
-        // Validate URL
-        if (!url) {
-            showMessage('Please enter a YouTube URL', 'error');
-            return;
-        }
-
-        if (!isValidYouTubeURL(url)) {
-            showMessage('Please enter a valid YouTube URL', 'error');
-            return;
-        }
-
-        // Show loading state
-        downloadBtn.disabled = true;
-        const originalText = downloadBtn.innerHTML;
-        downloadBtn.innerHTML = '<svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle></svg><span>Processing...</span>';
-
-        // Extract video ID
-        const videoId = extractVideoID(url);
-        if (videoId) {
-            // Fetch video info from backend
-            fetch(`${API_URL}/video-info?videoId=${videoId}`)
-                .then(response => response.json())
-                .then(data => {
-                    const videoData = {
-                        id: videoId,
-                        title: data.title || `YouTube Video - ${videoId}`,
-                        thumbnail: data.thumbnail || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-                        url: url,
-                        addedDate: new Date().toISOString(),
-                        duration: data.duration || 'Unknown'
-                    };
-
-                    const added = library.addVideo(videoData);
-                    if (added) {
-                        showMessage(`✅ "${videoData.title}" added to library!`, 'success');
-                        displayLibrary();
-                    } else {
-                        showMessage('ℹ️ This video is already in your library.', 'info');
-                    }
-
-                    downloadBtn.disabled = false;
-                    downloadBtn.innerHTML = originalText;
-                    videoURL.value = '';
-                })
-                .catch(error => {
-                    console.error('Error fetching video info:', error);
-                    // Fallback: add with basic info
-                    const videoData = {
-                        id: videoId,
-                        title: `YouTube Video - ${videoId}`,
-                        thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-                        url: url,
-                        addedDate: new Date().toISOString()
-                    };
-
-                    const added = library.addVideo(videoData);
-                    if (added) {
-                        showMessage(`✅ Video added to library! (Server offline - using default info)`, 'warning');
-                        displayLibrary();
-                    } else {
-                        showMessage('ℹ️ This video is already in your library.', 'info');
-                    }
-
-                    downloadBtn.disabled = false;
-                    downloadBtn.innerHTML = originalText;
-                    videoURL.value = '';
-                });
-        }
-    }
-
-    async function downloadVideo(videoId, title) {
-        try {
-            showMessage('🔄 Starting download...', 'info');
-
-            const response = await fetch(`${API_URL}/download?videoId=${videoId}`);
-
-            if (!response.ok) {
-                throw new Error('Download failed');
-            }
-
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = `${title.replace(/[^a-z0-9]/gi, '_')}.mp4`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            showMessage(`✅ "${title}" downloaded successfully!`, 'success');
-        } catch (error) {
-            console.error('Download error:', error);
-            showMessage(`❌ Download failed. Make sure the backend server is running at ${API_URL}`, 'error');
-        }
-    } function handleSearch() {
-        const query = searchQuery.value.trim();
-
-        if (!query) {
-            showMessage('Please enter a search query', 'error');
-            return;
-        }
-
-        searchBtn.disabled = true;
-        searchBtn.textContent = 'Searching...';
-
-        // Simulate YouTube search (in production, use YouTube Data API)
-        setTimeout(() => {
-            const mockResults = generateMockSearchResults(query);
-            displaySearchResults(mockResults);
-            searchBtn.disabled = false;
-            searchBtn.textContent = 'Search';
-        }, 800);
-    }
-
-    function generateMockSearchResults(query) {
-        // Generate mock video IDs for demonstration
-        const mockVideoIds = ['dQw4w9WgXcQ', 'jNQXAC9IVRw', 'kJQP7kiw5Fk', '9bZkp7q19f0', 'oHg5SJYRHA0'];
-
-        return mockVideoIds.slice(0, 3).map((id, index) => ({
-            id: id,
-            title: `${query} - Result ${index + 1}`,
-            thumbnail: `https://img.youtube.com/vi/${id}/mqdefault.jpg`,
-            url: `https://www.youtube.com/watch?v=${id}`,
-            views: `${Math.floor(Math.random() * 10000000).toLocaleString()} views`
-        }));
-    }
-
-    function displaySearchResults(results) {
-        searchResults.innerHTML = '';
-
-        if (results.length === 0) {
-            searchResults.innerHTML = '<p class="no-results">No results found</p>';
-            return;
-        }
-
-        results.forEach(video => {
-            const videoCard = createSearchResultCard(video);
-            searchResults.appendChild(videoCard);
-        });
-    }
-
-    function createSearchResultCard(video) {
-        const card = document.createElement('div');
-        card.className = 'search-result-card';
-        card.innerHTML = `
-            <img src="${video.thumbnail}" alt="${video.title}" class="result-thumbnail">
-            <div class="result-info">
-                <h3 class="result-title">${video.title}</h3>
-                <p class="result-meta">${video.views}</p>
-            </div>
-            <button class="add-to-library-btn" data-video='${JSON.stringify(video)}'>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-            </button>
-        `;
-
-        const addBtn = card.querySelector('.add-to-library-btn');
-        // Ensure button behaves like a button for accessibility
-        addBtn.type = 'button';
-        addBtn.addEventListener('click', function () {
-            const videoData = JSON.parse(this.dataset.video);
-            videoData.addedDate = new Date().toISOString();
-            const added = library.addVideo(videoData);
-
-            if (added) {
-                showMessage(`✅ "${videoData.title}" added to library!`, 'success');
-                displayLibrary();
-                this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-                this.disabled = true;
-            } else {
-                showMessage('ℹ️ This video is already in your library.', 'info');
-            }
-        });
-
-        return card;
-    }
-
-    function displayLibrary() {
-        const videos = library.getVideos();
-        libraryGrid.innerHTML = '';
-
-        if (videos.length === 0) {
-            libraryGrid.innerHTML = '<p class="no-videos">No videos in library yet. Add some videos to get started!</p>';
-            return;
-        }
-
-        videos.forEach(video => {
-            const card = createLibraryCard(video);
-            libraryGrid.appendChild(card);
-        });
-    }
-
-    function createLibraryCard(video) {
-        const card = document.createElement('div');
-        card.className = 'library-card';
-        card.innerHTML = `
-            <div class="card-thumbnail" style="background-image: url('${video.thumbnail}')">
-                <button class="play-btn" data-video-id="${video.id}">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
-                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                    </svg>
-                </button>
-            </div>
-            <div class="card-content">
-                <h3 class="card-title">${video.title}</h3>
-                <p class="card-date">Added: ${new Date(video.addedDate).toLocaleDateString()}</p>
-                <div class="card-actions">
-                    <button class="download-video-btn" data-video-id="${video.id}" data-title="${video.title}">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                        Download
-                    </button>
-                    <button class="remove-btn" data-video-id="${video.id}">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                        Remove
-                    </button>
-                </div>
-            </div>
-        `;
-
-        const playBtn = card.querySelector('.play-btn');
-        // accessibility: explicit button role
-        playBtn.type = 'button';
-        playBtn.addEventListener('click', function () {
-            playVideo(this.dataset.videoId);
-        });
-
-        const downloadVideoBtn = card.querySelector('.download-video-btn');
-        downloadVideoBtn.type = 'button';
-        downloadVideoBtn.addEventListener('click', function () {
-            downloadVideo(this.dataset.videoId, this.dataset.title);
-        });
-
-        const removeBtn = card.querySelector('.remove-btn');
-        removeBtn.type = 'button';
-        removeBtn.addEventListener('click', function () {
-            if (confirm('Remove this video from library?')) {
-                library.removeVideo(this.dataset.videoId);
-                displayLibrary();
-                showMessage('Video removed from library', 'info');
-            }
-        });
-
-        return card;
-    }
-
-    function playVideo(videoId) {
-        videoPlayer.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
-        playerContainer.classList.add('active');
-        playerContainer.setAttribute('aria-hidden', 'false');
-        document.body.style.overflow = 'hidden';
-    }
-
-    function minimizePlayer() {
-        playerContainer.classList.toggle('minimized');
-    }
-
-    function closeVideoPlayer() {
-        videoPlayer.src = '';
-        playerContainer.classList.remove('active');
-        playerContainer.classList.remove('minimized');
-        playerContainer.setAttribute('aria-hidden', 'true');
-        document.body.style.overflow = '';
-    }
-
-    function isValidYouTubeURL(url) {
-        // YouTube URL patterns
-        const patterns = [
-            /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=[\w-]+/,
-            /^(https?:\/\/)?(www\.)?youtu\.be\/[\w-]+/,
-            /^(https?:\/\/)?(www\.)?youtube\.com\/embed\/[\w-]+/,
-            /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]+/
-        ];
-
-        return patterns.some(pattern => pattern.test(url));
-    }
-
-    function extractVideoID(url) {
-        const patterns = [
-            /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\n?#]+)/
-        ];
-
-        for (let pattern of patterns) {
-            const match = url.match(pattern);
-            if (match && match[1]) {
-                return match[1];
-            }
-        }
-        return null;
-    }
-
-    function showMessage(text, type) {
-        message.textContent = text;
-        message.className = `message ${type}`;
-    }
 });
+
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+    const tabEl = document.getElementById(tabName);
+    if (tabEl) tabEl.classList.add('active');
+
+    const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+}
+
+function extractVideoId(url) {
+    const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\n?#]+)/,
+        /^([a-zA-Z0-9_-]{11})$/
+    ];
+    for (let pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) return match[1];
+    }
+    return null;
+}
+
+function formatDuration(seconds) {
+    if (!seconds) return 'Unknown';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return hours > 0 ? `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}` : `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+function formatViews(count) {
+    if (!count) return 'Unknown';
+    if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
+    if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
+    return count.toString();
+}
+
+function showStatus(elementId, message, type = 'info') {
+    const statusEl = document.getElementById(elementId);
+    if (!statusEl) return;
+    statusEl.textContent = message;
+    statusEl.className = `status-message show ${type}`;
+    setTimeout(() => statusEl.classList.remove('show'), 5000);
+}
+
+async function getVideoInfo() {
+    const input = document.getElementById('downloadInput').value.trim();
+
+    if (!input) {
+        showStatus('downloadStatus', 'Please enter a YouTube URL or video name', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('downloadBtn');
+    const btnText = btn.querySelector('.btn-text');
+    const spinner = btn.querySelector('.spinner');
+
+    btn.disabled = true;
+    if (btnText) btnText.textContent = 'Loading...';
+    if (spinner) spinner.classList.remove('hidden');
+
+    const previewEl = document.getElementById('videoPreview');
+    if (previewEl) previewEl.classList.add('hidden');
+
+    const videoId = extractVideoId(input);
+
+    if (videoId) {
+        await fetchVideoInfo(videoId);
+    } else {
+        await searchAndGetFirst(input);
+    }
+
+    btn.disabled = false;
+    if (btnText) btnText.textContent = 'Get Video';
+    if (spinner) spinner.classList.add('hidden');
+}
+
+async function fetchVideoInfo(videoId) {
+    try {
+        const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Video not found or unavailable');
+        const data = await response.json();
+        currentVideo = {
+            id: videoId,
+            title: data.title,
+            uploader: data.author_name,
+            thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+            url: `https://www.youtube.com/watch?v=${videoId}`,
+            duration: 0,
+            views: 0
+        };
+        displayVideoPreview(currentVideo);
+        showStatus('downloadStatus', 'Video information loaded!', 'success');
+    } catch (error) {
+        showStatus('downloadStatus', `Error: ${error.message}`, 'error');
+    }
+}
+
+async function searchAndGetFirst(query) {
+    showStatus('downloadStatus', 'Please enter a valid YouTube URL instead. Search feature requires YouTube API key.', 'error');
+}
+
+function displayVideoPreview(video) {
+    if (!video) return;
+
+    const thumbnail = document.getElementById('previewThumbnail');
+    const title = document.getElementById('previewTitle');
+    const uploader = document.getElementById('previewUploader');
+    const duration = document.getElementById('previewDuration');
+    const views = document.getElementById('previewViews');
+    const preview = document.getElementById('videoPreview');
+
+    if (thumbnail) thumbnail.src = video.thumbnail;
+    if (title) title.textContent = video.title;
+    if (uploader) uploader.textContent = video.uploader || 'Unknown';
+    if (duration) duration.textContent = video.duration ? formatDuration(video.duration) : 'Unknown';
+    if (views) views.textContent = video.views ? formatViews(video.views) : 'Unknown';
+    if (preview) preview.classList.remove('hidden');
+}
+
+function saveToLibrary() {
+    if (!currentVideo) {
+        showStatus('downloadStatus', 'No video selected', 'error');
+        return;
+    }
+
+    const added = library.add(currentVideo);
+
+    if (added) {
+        showStatus('downloadStatus', `✓ "${currentVideo.title}" added to library!`, 'success');
+        displayLibrary();
+    } else {
+        showStatus('downloadStatus', 'This video is already in your library', 'info');
+    }
+}
+
+function downloadVideo() {
+    if (!currentVideo) {
+        showStatus('downloadStatus', 'No video selected', 'error');
+        return;
+    }
+
+    showStatus('downloadStatus', 'Opening video URL (actual download requires backend server)...', 'info');
+    window.open(currentVideo.url, '_blank');
+}
+
+function watchVideo() {
+    if (!currentVideo) {
+        showStatus('downloadStatus', 'No video selected', 'error');
+        return;
+    }
+
+    playVideoInModal(currentVideo);
+}
+
+async function searchVideos() {
+    const query = document.getElementById('searchInput').value.trim();
+
+    if (!query) {
+        showStatus('searchStatus', 'Please enter a search query', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('searchBtn');
+    const btnText = btn.querySelector('.btn-text');
+    const spinner = btn.querySelector('.spinner');
+
+    btn.disabled = true;
+    if (btnText) btnText.textContent = 'Searching...';
+    if (spinner) spinner.classList.remove('hidden');
+
+    setTimeout(() => {
+        const mockResults = generateMockSearchResults(query);
+        displaySearchResults(mockResults);
+
+        btn.disabled = false;
+        if (btnText) btnText.textContent = 'Search';
+        if (spinner) spinner.classList.add('hidden');
+
+        showStatus('searchStatus', `Found ${mockResults.length} results (Mock data - requires YouTube API for real search)`, 'info');
+    }, 1000);
+}
+
+function generateMockSearchResults(query) {
+    const mockVideoIds = [
+        'dQw4w9WgXcQ',
+        'jNQXAC9IVRw',
+        'kJQP7kiw5Fk',
+        '9bZkp7q19f0',
+        'oHg5SJYRHA0',
+        'L_jWHffIx5E'
+    ];
+
+    return mockVideoIds.map((id, index) => ({
+        id: id,
+        title: `${query} - Result ${index + 1}`,
+        uploader: 'Sample Channel',
+        thumbnail: `https://img.youtube.com/vi/${id}/mqdefault.jpg`,
+        url: `https://www.youtube.com/watch?v=${id}`,
+        duration: Math.floor(Math.random() * 600),
+        views: Math.floor(Math.random() * 10000000)
+    }));
+}
+
+function displaySearchResults(results) {
+    const container = document.getElementById('searchResults');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (results.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No results found</p></div>';
+        return;
+    }
+
+    results.forEach(video => {
+        const card = createResultCard(video);
+        container.appendChild(card);
+    });
+}
+
+function createResultCard(video) {
+    const card = document.createElement('div');
+    card.className = 'result-card';
+
+    card.innerHTML = `
+        <img src="${video.thumbnail}" alt="${video.title}">
+        <div class="result-card-body">
+            <h4>${video.title}</h4>
+            <p>${video.uploader} • ${formatDuration(video.duration)}</p>
+            <div class="result-card-actions">
+                <button onclick='addSearchResultToLibrary(${JSON.stringify(video).replace(/'/g, "&apos;")})' class="btn btn-success">💾</button>
+                <button onclick='playSearchResult(${JSON.stringify(video).replace(/'/g, "&apos;")})' class="btn btn-primary">▶️</button>
+            </div>
+        </div>
+    `;
+
+    return card;
+}
+
+function addSearchResultToLibrary(video) {
+    const added = library.add(video);
+
+    if (added) {
+        showStatus('searchStatus', `✓ "${video.title}" added to library!`, 'success');
+        displayLibrary();
+    } else {
+        showStatus('searchStatus', 'This video is already in your library', 'info');
+    }
+}
+
+function playSearchResult(video) {
+    playVideoInModal(video);
+}
+
+function displayLibrary() {
+    const container = document.getElementById('libraryContent');
+    const emptyState = document.getElementById('emptyLibrary');
+    const videos = library.getAll();
+
+    if (!container || !emptyState) return;
+
+    container.innerHTML = '';
+
+    if (videos.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+    }
+
+    emptyState.style.display = 'none';
+
+    videos.forEach(video => {
+        const card = createLibraryCard(video);
+        container.appendChild(card);
+    });
+}
+
+function createLibraryCard(video) {
+    const card = document.createElement('div');
+    card.className = 'library-card';
+
+    card.innerHTML = `
+        <img src="${video.thumbnail}" alt="${video.title}" onclick='playLibraryVideo(${JSON.stringify(video).replace(/'/g, "&apos;")})'>
+        <div class="library-card-body">
+            <h4>${video.title}</h4>
+            <p>${video.uploader || 'Unknown'} • Added ${new Date(video.savedAt).toLocaleDateString()}</p>
+            <div class="library-card-actions">
+                <button onclick='playLibraryVideo(${JSON.stringify(video).replace(/'/g, "&apos;")})' class="btn btn-primary">▶️ Watch</button>
+                <button onclick='downloadLibraryVideo(${JSON.stringify(video).replace(/'/g, "&apos;")})' class="btn btn-secondary">⬇️</button>
+                <button onclick='removeFromLibrary("${video.id}")' class="btn btn-danger">🗑️</button>
+            </div>
+        </div>
+    `;
+
+    return card;
+}
+
+function playLibraryVideo(video) {
+    playVideoInModal(video);
+}
+
+function downloadLibraryVideo(video) {
+    window.open(video.url, '_blank');
+}
+
+function removeFromLibrary(videoId) {
+    if (confirm('Remove this video from library?')) {
+        library.remove(videoId);
+        displayLibrary();
+        showStatus('downloadStatus', 'Video removed from library', 'success');
+    }
+}
+
+function clearLibrary() {
+    if (confirm('Are you sure you want to clear your entire library?')) {
+        library.clear();
+        displayLibrary();
+        showStatus('downloadStatus', 'Library cleared', 'success');
+    }
+}
+
+function updateLibraryCount() {
+    const countEl = document.getElementById('libraryCount');
+    if (countEl) {
+        countEl.textContent = library.getAll().length;
+    }
+}
+
+function playVideoInModal(video) {
+    if (!video) return;
+
+    const modal = document.getElementById('videoPlayerModal');
+    const player = document.getElementById('videoPlayer');
+    const title = document.getElementById('playerTitle');
+
+    if (!modal || !player || !title) return;
+
+    title.textContent = video.title;
+    player.src = `https://www.youtube.com/embed/${video.id}?autoplay=1`;
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function closePlayer() {
+    const modal = document.getElementById('videoPlayerModal');
+    const player = document.getElementById('videoPlayer');
+
+    if (!modal || !player) return;
+
+    player.src = '';
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+}
