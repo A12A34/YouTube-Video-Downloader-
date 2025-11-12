@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Video Downloader</title>
+    <meta name="description" content="Download YouTube videos easily with our simple and intuitive tool">
+    <link rel="stylesheet" href="styles.css">
+    <script src="script.js" defer></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <main id="main" class="container">
+        <!-- Download Section -->
+        <div id="download_dev">
+            <div class="header">
+                <svg class="logo" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path>
+                    <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
+                </svg>
+                <h1>YouTube Downloader</h1>
+            </div>
+            <p class="subtitle">Add videos to your library by URL or search</p>
+            
+            <div class="input-group">
+                <label for="videoURL" class="sr-only">YouTube video URL</label>
+                <input 
+                    type="url" 
+                    id="videoURL" 
+                    placeholder="https://www.youtube.com/watch?v=..." 
+                    aria-label="YouTube video URL"
+                    autocomplete="off"
+                    spellcheck="false">
+                <button type="button" id="downloadBtn" aria-label="Download video">
+                    <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Add to Library</span>
+                </button>
+            </div>
+            
+            <div id="message" role="status" aria-live="polite" aria-atomic="true" class="visually-hidden"></div>
+            
+            <div class="features">
+                <div class="feature">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span>Instant Playback</span>
+                </div>
+                <div class="feature">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span>Video Library</span>
+                </div>
+                <div class="feature">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span>Easy Search</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Section -->
+        <section class="search-section" role="region" aria-labelledby="searchHeading">
+            <h2>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                Search YouTube
+            </h2>
+            <div class="input-group">
+                <label for="searchQuery" class="sr-only">Search query</label>
+                <input 
+                    type="text" 
+                    id="searchQuery" 
+                    placeholder="Search for videos..." 
+                    aria-label="Search query"
+                    autocomplete="off">
+                <button type="button" id="searchBtn" aria-label="Search videos">
+                    <svg class="btn-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                    <span>Search</span>
+                </button>
+            </div>
+            <div id="searchResults" class="search-results"></div>
+        </section>
+
+        <!-- Library Section -->
+        <section class="library-section" role="region" aria-labelledby="libraryHeading">
+            <h2>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+                My Video Library
+            </h2>
+            <div id="libraryGrid" class="library-grid"></div>
+        </section>
+        
+        <footer role="contentinfo">
+            <p>⚠️ This tool embeds YouTube videos for playback. Respect YouTube's Terms of Service and copyright laws.</p>
+        </footer>
+    </main>
+
+    <!-- Video Player Modal -->
+    <div id="playerContainer" class="player-container" aria-hidden="true">
+        <div class="player-wrapper">
+            <div class="player-controls">
+                <button type="button" id="minimizePlayer" class="minimize-player" aria-label="Minimize player">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="4 14 10 14 10 20"></polyline>
+                        <polyline points="20 10 14 10 14 4"></polyline>
+                        <line x1="14" y1="10" x2="21" y2="3"></line>
+                        <line x1="3" y1="21" x2="10" y2="14"></line>
+                    </svg>
+                </button>
+                <button type="button" id="closePlayer" class="close-player" aria-label="Close player">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <iframe 
+                id="videoPlayer" 
+                width="100%" 
+                height="100%" 
+                frameborder="0" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                allowfullscreen>
+            </iframe>
+        </div>
+    </div>
+</body>
+</html> 
