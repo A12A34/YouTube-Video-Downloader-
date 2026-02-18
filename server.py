@@ -8,6 +8,7 @@ app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES_FILE = os.path.join(BASE_DIR, 'cookies.txt')
+HAS_FFMPEG = shutil.which('ffmpeg') is not None
 
 
 def get_cookie_opts():
@@ -167,13 +168,22 @@ def delete_cookies():
 
 # ─── API: Download ──────────────────────────────────────────────────────────
 
-FORMAT_MAP = {
-    'best': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-    '720': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]',
-    '480': 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]',
-    '360': 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=360]',
-    'audio': 'bestaudio[ext=m4a]/bestaudio',
-}
+if HAS_FFMPEG:
+    FORMAT_MAP = {
+        'best': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        '720': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]',
+        '480': 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]',
+        '360': 'bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=360]',
+        'audio': 'bestaudio[ext=m4a]/bestaudio',
+    }
+else:
+    FORMAT_MAP = {
+        'best': 'best[ext=mp4]/best',
+        '720': 'best[height<=720][ext=mp4]/best[height<=720]',
+        '480': 'best[height<=480][ext=mp4]/best[height<=480]',
+        '360': 'best[height<=360][ext=mp4]/best[height<=360]',
+        'audio': 'bestaudio[ext=m4a]/bestaudio',
+    }
 
 
 @app.route('/api/download')
@@ -196,7 +206,7 @@ def download_video():
         **get_cookie_opts(),
     }
 
-    if quality != 'audio':
+    if quality != 'audio' and HAS_FFMPEG:
         ydl_opts['merge_output_format'] = 'mp4'
 
     try:
@@ -239,6 +249,12 @@ def download_video():
 # ─── Main ───────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    print(f'\n  Cookies file: {"FOUND" if os.path.isfile(COOKIES_FILE) else "NOT FOUND"} ({COOKIES_FILE})')
-    print(f'  To enable downloads, place a cookies.txt file in: {BASE_DIR}\n')
+    has_cookies = os.path.isfile(COOKIES_FILE)
+    print(f'\n  FFmpeg: {"FOUND" if HAS_FFMPEG else "NOT FOUND (video+audio merging disabled)"}')
+    if has_cookies:
+        print(f'  Cookies: LOADED ({COOKIES_FILE})')
+    else:
+        print(f'  Cookies: not configured (optional)')
+        print(f'  To enable age-restricted downloads, place a cookies.txt file in: {BASE_DIR}')
+    print()
     app.run(host='0.0.0.0', port=8000, debug=True, threaded=True)
