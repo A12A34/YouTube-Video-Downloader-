@@ -49,12 +49,13 @@ let currentVideo = null;
 document.addEventListener('DOMContentLoaded', () => {
     displayLibrary();
     updateLibraryCount();
+    checkCookieStatus();
 
-    // Event listeners for inputs
     const downloadInput = document.getElementById('downloadInput');
     const searchInput = document.getElementById('searchInput');
     const downloadBtn = document.getElementById('downloadBtn');
     const searchBtn = document.getElementById('searchBtn');
+    const cookieFileInput = document.getElementById('cookieFileInput');
 
     if (downloadInput) {
         downloadInput.addEventListener('keypress', (e) => {
@@ -76,14 +77,16 @@ document.addEventListener('DOMContentLoaded', () => {
         searchBtn.addEventListener('click', searchVideos);
     }
 
-    // Tab buttons
+    if (cookieFileInput) {
+        cookieFileInput.addEventListener('change', uploadCookies);
+    }
+
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', () => {
             switchTab(btn.dataset.tab);
         });
     });
 
-    // Close modal on Esc
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closePlayer();
     });
@@ -117,7 +120,9 @@ function formatDuration(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    return hours > 0 ? `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}` : `${minutes}:${secs.toString().padStart(2, '0')}`;
+    return hours > 0
+        ? `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+        : `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
 function formatViews(count) {
@@ -134,6 +139,18 @@ function showStatus(elementId, message, type = 'info') {
     statusEl.className = `status-message show ${type}`;
     setTimeout(() => statusEl.classList.remove('show'), 5000);
 }
+
+function showDownloadProgress(visible) {
+    const el = document.getElementById('downloadProgress');
+    if (!el) return;
+    if (visible) {
+        el.classList.remove('hidden');
+    } else {
+        el.classList.add('hidden');
+    }
+}
+
+// ─── Get Video Info ────────────────────────────────────────────────────────
 
 async function getVideoInfo() {
     const input = document.getElementById('downloadInput').value.trim();
@@ -169,19 +186,21 @@ async function getVideoInfo() {
 
 async function fetchVideoInfo(videoId) {
     try {
-        const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Video not found or unavailable');
+        const response = await fetch(`/api/info?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + videoId)}`);
         const data = await response.json();
+
+        if (data.error) throw new Error(data.error);
+
         currentVideo = {
-            id: videoId,
+            id: data.id,
             title: data.title,
-            uploader: data.author_name,
-            thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-            url: `https://www.youtube.com/watch?v=${videoId}`,
-            duration: 0,
-            views: 0
+            uploader: data.uploader,
+            thumbnail: data.thumbnail || `https://img.youtube.com/vi/${data.id}/maxresdefault.jpg`,
+            url: data.url || `https://www.youtube.com/watch?v=${data.id}`,
+            duration: data.duration,
+            views: data.view_count,
         };
+
         displayVideoPreview(currentVideo);
         showStatus('downloadStatus', 'Video information loaded!', 'success');
     } catch (error) {
@@ -190,8 +209,35 @@ async function fetchVideoInfo(videoId) {
 }
 
 async function searchAndGetFirst(query) {
-    showStatus('downloadStatus', 'Please enter a valid YouTube URL instead. Search feature requires YouTube API key.', 'error');
+    try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&max=1`);
+        const data = await response.json();
+
+        if (data.error) throw new Error(data.error);
+        if (!data.results || data.results.length === 0) {
+            showStatus('downloadStatus', 'No videos found for that query', 'error');
+            return;
+        }
+
+        const first = data.results[0];
+        currentVideo = {
+            id: first.id,
+            title: first.title,
+            uploader: first.uploader,
+            thumbnail: first.thumbnail || `https://img.youtube.com/vi/${first.id}/maxresdefault.jpg`,
+            url: first.url || `https://www.youtube.com/watch?v=${first.id}`,
+            duration: first.duration,
+            views: first.view_count,
+        };
+
+        displayVideoPreview(currentVideo);
+        showStatus('downloadStatus', 'Video information loaded!', 'success');
+    } catch (error) {
+        showStatus('downloadStatus', `Error: ${error.message}`, 'error');
+    }
 }
+
+// ─── Display Video Preview ─────────────────────────────────────────────────
 
 function displayVideoPreview(video) {
     if (!video) return;
@@ -211,6 +257,8 @@ function displayVideoPreview(video) {
     if (preview) preview.classList.remove('hidden');
 }
 
+// ─── Actions ───────────────────────────────────────────────────────────────
+
 function saveToLibrary() {
     if (!currentVideo) {
         showStatus('downloadStatus', 'No video selected', 'error');
@@ -220,21 +268,53 @@ function saveToLibrary() {
     const added = library.add(currentVideo);
 
     if (added) {
-        showStatus('downloadStatus', `✓ "${currentVideo.title}" added to library!`, 'success');
+        showStatus('downloadStatus', `"${currentVideo.title}" added to library!`, 'success');
         displayLibrary();
     } else {
         showStatus('downloadStatus', 'This video is already in your library', 'info');
     }
 }
 
-function downloadVideo() {
+async function downloadVideo() {
     if (!currentVideo) {
         showStatus('downloadStatus', 'No video selected', 'error');
         return;
     }
 
-    showStatus('downloadStatus', 'Opening video URL (actual download requires backend server)...', 'info');
-    window.open(currentVideo.url, '_blank');
+    const quality = document.getElementById('qualitySelect').value;
+    const downloadUrl = `/api/download?url=${encodeURIComponent(currentVideo.url)}&quality=${quality}`;
+
+    showDownloadProgress(true);
+    showStatus('downloadStatus', 'Download started! This may take a moment...', 'info');
+
+    try {
+        const response = await fetch(downloadUrl);
+
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Download failed');
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename="?(.+?)"?$/);
+        const filename = filenameMatch ? filenameMatch[1] : `${currentVideo.title}.mp4`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showStatus('downloadStatus', 'Download complete!', 'success');
+    } catch (error) {
+        showStatus('downloadStatus', error.message, 'error');
+    } finally {
+        showDownloadProgress(false);
+    }
 }
 
 function watchVideo() {
@@ -245,6 +325,8 @@ function watchVideo() {
 
     playVideoInModal(currentVideo);
 }
+
+// ─── Search ────────────────────────────────────────────────────────────────
 
 async function searchVideos() {
     const query = document.getElementById('searchInput').value.trim();
@@ -262,37 +344,21 @@ async function searchVideos() {
     if (btnText) btnText.textContent = 'Searching...';
     if (spinner) spinner.classList.remove('hidden');
 
-    setTimeout(() => {
-        const mockResults = generateMockSearchResults(query);
-        displaySearchResults(mockResults);
+    try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&max=8`);
+        const data = await response.json();
 
+        if (data.error) throw new Error(data.error);
+
+        displaySearchResults(data.results || []);
+        showStatus('searchStatus', `Found ${(data.results || []).length} results`, 'success');
+    } catch (error) {
+        showStatus('searchStatus', `Search failed: ${error.message}`, 'error');
+    } finally {
         btn.disabled = false;
         if (btnText) btnText.textContent = 'Search';
         if (spinner) spinner.classList.add('hidden');
-
-        showStatus('searchStatus', `Found ${mockResults.length} results (Mock data - requires YouTube API for real search)`, 'info');
-    }, 1000);
-}
-
-function generateMockSearchResults(query) {
-    const mockVideoIds = [
-        'dQw4w9WgXcQ',
-        'jNQXAC9IVRw',
-        'kJQP7kiw5Fk',
-        '9bZkp7q19f0',
-        'oHg5SJYRHA0',
-        'L_jWHffIx5E'
-    ];
-
-    return mockVideoIds.map((id, index) => ({
-        id: id,
-        title: `${query} - Result ${index + 1}`,
-        uploader: 'Sample Channel',
-        thumbnail: `https://img.youtube.com/vi/${id}/mqdefault.jpg`,
-        url: `https://www.youtube.com/watch?v=${id}`,
-        duration: Math.floor(Math.random() * 600),
-        views: Math.floor(Math.random() * 10000000)
-    }));
+    }
 }
 
 function displaySearchResults(results) {
@@ -316,14 +382,17 @@ function createResultCard(video) {
     const card = document.createElement('div');
     card.className = 'result-card';
 
+    const videoData = encodeURIComponent(JSON.stringify(video));
+
     card.innerHTML = `
-        <img src="${video.thumbnail}" alt="${video.title}">
+        <img src="${escapeHtml(video.thumbnail)}" alt="${escapeHtml(video.title)}">
         <div class="result-card-body">
-            <h4>${video.title}</h4>
-            <p>${video.uploader} • ${formatDuration(video.duration)}</p>
+            <h4>${escapeHtml(video.title)}</h4>
+            <p>${escapeHtml(video.uploader || 'Unknown')} · ${formatDuration(video.duration)}</p>
             <div class="result-card-actions">
-                <button onclick='addSearchResultToLibrary(${JSON.stringify(video).replace(/'/g, "&apos;")})' class="btn btn-success">💾</button>
-                <button onclick='playSearchResult(${JSON.stringify(video).replace(/'/g, "&apos;")})' class="btn btn-primary">▶️</button>
+                <button data-video="${videoData}" onclick="addSearchResultFromBtn(this)" class="btn btn-success">💾</button>
+                <button data-video="${videoData}" onclick="playSearchResultFromBtn(this)" class="btn btn-primary">▶️</button>
+                <button data-video="${videoData}" onclick="downloadSearchResultFromBtn(this)" class="btn btn-secondary">⬇️</button>
             </div>
         </div>
     `;
@@ -331,20 +400,71 @@ function createResultCard(video) {
     return card;
 }
 
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function getVideoFromBtn(btn) {
+    return JSON.parse(decodeURIComponent(btn.getAttribute('data-video')));
+}
+
+function addSearchResultFromBtn(btn) {
+    const video = getVideoFromBtn(btn);
+    addSearchResultToLibrary(video);
+}
+
+function playSearchResultFromBtn(btn) {
+    const video = getVideoFromBtn(btn);
+    playVideoInModal(video);
+}
+
+async function downloadSearchResultFromBtn(btn) {
+    const video = getVideoFromBtn(btn);
+    const videoUrl = video.url || `https://www.youtube.com/watch?v=${video.id}`;
+    const downloadUrl = `/api/download?url=${encodeURIComponent(videoUrl)}&quality=best`;
+
+    showStatus('searchStatus', `Downloading "${video.title}"...`, 'info');
+
+    try {
+        const response = await fetch(downloadUrl);
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Download failed');
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename="?(.+?)"?$/);
+        const filename = filenameMatch ? filenameMatch[1] : `${video.title}.mp4`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showStatus('searchStatus', 'Download complete!', 'success');
+    } catch (error) {
+        showStatus('searchStatus', error.message, 'error');
+    }
+}
+
 function addSearchResultToLibrary(video) {
     const added = library.add(video);
 
     if (added) {
-        showStatus('searchStatus', `✓ "${video.title}" added to library!`, 'success');
+        showStatus('searchStatus', `"${video.title}" added to library!`, 'success');
         displayLibrary();
     } else {
         showStatus('searchStatus', 'This video is already in your library', 'info');
     }
 }
 
-function playSearchResult(video) {
-    playVideoInModal(video);
-}
+// ─── Library ───────────────────────────────────────────────────────────────
 
 function displayLibrary() {
     const container = document.getElementById('libraryContent');
@@ -372,15 +492,17 @@ function createLibraryCard(video) {
     const card = document.createElement('div');
     card.className = 'library-card';
 
+    const videoData = encodeURIComponent(JSON.stringify(video));
+
     card.innerHTML = `
-        <img src="${video.thumbnail}" alt="${video.title}" onclick='playLibraryVideo(${JSON.stringify(video).replace(/'/g, "&apos;")})'>
+        <img src="${escapeHtml(video.thumbnail)}" alt="${escapeHtml(video.title)}" data-video="${videoData}" onclick="playLibraryVideoFromBtn(this)">
         <div class="library-card-body">
-            <h4>${video.title}</h4>
-            <p>${video.uploader || 'Unknown'} • Added ${new Date(video.savedAt).toLocaleDateString()}</p>
+            <h4>${escapeHtml(video.title)}</h4>
+            <p>${escapeHtml(video.uploader || 'Unknown')} · Added ${new Date(video.savedAt).toLocaleDateString()}</p>
             <div class="library-card-actions">
-                <button onclick='playLibraryVideo(${JSON.stringify(video).replace(/'/g, "&apos;")})' class="btn btn-primary">▶️ Watch</button>
-                <button onclick='downloadLibraryVideo(${JSON.stringify(video).replace(/'/g, "&apos;")})' class="btn btn-secondary">⬇️</button>
-                <button onclick='removeFromLibrary("${video.id}")' class="btn btn-danger">🗑️</button>
+                <button data-video="${videoData}" onclick="playLibraryVideoFromBtn(this)" class="btn btn-primary">▶️ Watch</button>
+                <button data-video="${videoData}" onclick="downloadLibraryVideoFromBtn(this)" class="btn btn-secondary">⬇️</button>
+                <button onclick="removeFromLibrary('${video.id}')" class="btn btn-danger">🗑️</button>
             </div>
         </div>
     `;
@@ -388,19 +510,44 @@ function createLibraryCard(video) {
     return card;
 }
 
-function playLibraryVideo(video) {
+function playLibraryVideoFromBtn(btn) {
+    const video = getVideoFromBtn(btn);
     playVideoInModal(video);
 }
 
-function downloadLibraryVideo(video) {
-    window.open(video.url, '_blank');
+async function downloadLibraryVideoFromBtn(btn) {
+    const video = getVideoFromBtn(btn);
+    const videoUrl = video.url || `https://www.youtube.com/watch?v=${video.id}`;
+    const downloadUrl = `/api/download?url=${encodeURIComponent(videoUrl)}&quality=best`;
+
+    try {
+        const response = await fetch(downloadUrl);
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || 'Download failed');
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename="?(.+?)"?$/);
+        const filename = filenameMatch ? filenameMatch[1] : `${video.title}.mp4`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        alert(error.message);
+    }
 }
 
 function removeFromLibrary(videoId) {
     if (confirm('Remove this video from library?')) {
         library.remove(videoId);
         displayLibrary();
-        showStatus('downloadStatus', 'Video removed from library', 'success');
     }
 }
 
@@ -408,7 +555,6 @@ function clearLibrary() {
     if (confirm('Are you sure you want to clear your entire library?')) {
         library.clear();
         displayLibrary();
-        showStatus('downloadStatus', 'Library cleared', 'success');
     }
 }
 
@@ -418,6 +564,85 @@ function updateLibraryCount() {
         countEl.textContent = library.getAll().length;
     }
 }
+
+// ─── Cookie Management ─────────────────────────────────────────────────────
+
+async function checkCookieStatus() {
+    try {
+        const response = await fetch('/api/cookie-status');
+        const data = await response.json();
+        updateCookieBanner(data.has_cookies);
+    } catch {
+        updateCookieBanner(false);
+    }
+}
+
+function updateCookieBanner(hasCookies) {
+    const banner = document.getElementById('cookieBanner');
+    const success = document.getElementById('cookieSuccess');
+    if (!banner || !success) return;
+
+    if (hasCookies) {
+        banner.classList.add('hidden');
+        success.classList.remove('hidden');
+    } else {
+        banner.classList.remove('hidden');
+        success.classList.add('hidden');
+    }
+}
+
+async function uploadCookies() {
+    const input = document.getElementById('cookieFileInput');
+    const statusEl = document.getElementById('cookieStatus');
+    if (!input || !input.files.length) return;
+
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+
+    if (statusEl) {
+        statusEl.textContent = 'Uploading...';
+        statusEl.className = 'cookie-status';
+    }
+
+    try {
+        const response = await fetch('/api/upload-cookies', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await response.json();
+
+        if (data.error) {
+            if (statusEl) {
+                statusEl.textContent = data.error;
+                statusEl.className = 'cookie-status error';
+            }
+        } else {
+            if (statusEl) {
+                statusEl.textContent = data.message;
+                statusEl.className = 'cookie-status success';
+            }
+            setTimeout(() => checkCookieStatus(), 1000);
+        }
+    } catch (error) {
+        if (statusEl) {
+            statusEl.textContent = 'Upload failed: ' + error.message;
+            statusEl.className = 'cookie-status error';
+        }
+    }
+
+    input.value = '';
+}
+
+async function deleteCookies() {
+    try {
+        await fetch('/api/delete-cookies', { method: 'POST' });
+        checkCookieStatus();
+    } catch {
+        // ignore
+    }
+}
+
+// ─── Video Player Modal ────────────────────────────────────────────────────
 
 function playVideoInModal(video) {
     if (!video) return;

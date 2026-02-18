@@ -17,6 +17,29 @@
             <p class="subtitle">Download, Search, Save & Watch YouTube Videos</p>
         </header>
 
+        <!-- Cookie Setup Banner -->
+        <div id="cookieBanner" class="cookie-banner hidden">
+            <div class="cookie-banner-content">
+                <div class="cookie-banner-text">
+                    <strong>⚠️ Cookies required for downloads</strong>
+                    <p>YouTube requires authentication. Upload your <code>cookies.txt</code> to enable downloading.</p>
+                    <p class="cookie-help">Use a browser extension like <strong>"Get cookies.txt LOCALLY"</strong> on youtube.com, then upload the exported file below.</p>
+                </div>
+                <div class="cookie-banner-actions">
+                    <label class="btn btn-primary cookie-upload-btn">
+                        📁 Upload cookies.txt
+                        <input type="file" id="cookieFileInput" accept=".txt" hidden>
+                    </label>
+                </div>
+            </div>
+            <div id="cookieStatus" class="cookie-status"></div>
+        </div>
+
+        <div id="cookieSuccess" class="cookie-success hidden">
+            ✅ Cookies loaded — downloads are enabled
+            <button onclick="deleteCookies()" class="btn-link">Remove cookies</button>
+        </div>
+
         <!-- Tab Navigation -->
         <div class="tabs">
             <button class="tab-btn active" data-tab="download">📥 Download</button>
@@ -29,7 +52,7 @@
             <div class="card">
                 <h2>Download Video</h2>
                 <p class="description">Enter a YouTube URL or search by video name</p>
-                
+
                 <div class="input-group">
                     <input type="text" id="downloadInput" placeholder="Paste YouTube URL or enter video name..." autocomplete="off">
                     <button id="downloadBtn" class="btn btn-primary">
@@ -37,9 +60,9 @@
                         <span class="spinner hidden"></span>
                     </button>
                 </div>
-                
+
                 <div id="downloadStatus" class="status-message"></div>
-                
+
                 <!-- Video Preview -->
                 <div id="videoPreview" class="video-preview hidden">
                     <div class="preview-card">
@@ -51,10 +74,26 @@
                                 <span>⏱️ <span id="previewDuration"></span></span>
                                 <span>👁️ <span id="previewViews"></span></span>
                             </p>
+                            <div class="quality-selector">
+                                <label for="qualitySelect">Quality:</label>
+                                <select id="qualitySelect">
+                                    <option value="best">Best Quality</option>
+                                    <option value="720">720p</option>
+                                    <option value="480">480p</option>
+                                    <option value="360">360p</option>
+                                    <option value="audio">Audio Only</option>
+                                </select>
+                            </div>
                             <div class="preview-actions">
                                 <button onclick="saveToLibrary()" class="btn btn-success">💾 Save to Library</button>
                                 <button onclick="downloadVideo()" class="btn btn-primary">⬇️ Download</button>
                                 <button onclick="watchVideo()" class="btn btn-secondary">▶️ Watch Now</button>
+                            </div>
+                            <div id="downloadProgress" class="download-progress hidden">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill"></div>
+                                </div>
+                                <span id="progressText">Preparing download...</span>
                             </div>
                         </div>
                     </div>
@@ -67,17 +106,17 @@
             <div class="card">
                 <h2>Search YouTube Videos</h2>
                 <p class="description">Find videos by searching with keywords</p>
-                
+
                 <div class="input-group">
-                    <input type="text" id="searchInput" placeholder="Search for videos..." autocomplete="off">
+                    <input type="text" id="searchInput" placeholder="Search YouTube videos..." autocomplete="off">
                     <button id="searchBtn" class="btn btn-primary">
                         <span class="btn-text">Search</span>
                         <span class="spinner hidden"></span>
                     </button>
                 </div>
-                
+
                 <div id="searchStatus" class="status-message"></div>
-                
+
                 <!-- Search Results -->
                 <div id="searchResults" class="search-results"></div>
             </div>
@@ -93,9 +132,9 @@
                     </div>
                     <button onclick="clearLibrary()" class="btn btn-danger">🗑️ Clear All</button>
                 </div>
-                
+
                 <div id="libraryContent" class="library-grid"></div>
-                
+
                 <div id="emptyLibrary" class="empty-state">
                     <svg width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
                         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -115,20 +154,18 @@
                     <button onclick="closePlayer()" class="close-btn">&times;</button>
                 </div>
                 <div class="modal-body">
-                    <iframe 
-                        id="videoPlayer" 
-                        width="100%" 
-                        height="500" 
-                        frameborder="0" 
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    <iframe
+                        id="videoPlayer"
+                        width="100%"
+                        height="500"
+                        frameborder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowfullscreen>
                     </iframe>
                 </div>
             </div>
         </div>
     </div>
-
-
 </body>
 
 </html>
