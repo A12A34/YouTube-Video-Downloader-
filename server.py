@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+import requests
 from flask import Flask, request, jsonify, send_from_directory, send_file, after_this_request
 import yt_dlp
 
@@ -8,6 +9,12 @@ app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COOKIES_FILE = os.path.join(BASE_DIR, 'cookies.txt')
+
+INVIDIOUS_INSTANCES = [
+    'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de',
+    'https://inv.tux.pizza',
+]
 
 
 def get_cookie_opts():
@@ -120,6 +127,56 @@ def search_videos():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ─── API: Invidious Proxy ────────────────────────────────────────────────────
+
+def invidious_fetch(path):
+    """Try fetching from Invidious instances with fallback."""
+    for instance in INVIDIOUS_INSTANCES:
+        try:
+            resp = requests.get(f'{instance}{path}', timeout=10)
+            if resp.ok:
+                return resp.json()
+        except Exception:
+            continue
+    return None
+
+
+@app.route('/api/popular')
+def popular_videos():
+    data = invidious_fetch('/api/v1/popular')
+    if data is None:
+        return jsonify({'error': 'Could not fetch popular videos'}), 502
+    return jsonify(data)
+
+
+@app.route('/api/trending')
+def trending_videos():
+    vtype = request.args.get('type', '')
+    path = '/api/v1/trending'
+    if vtype:
+        path += f'?type={vtype}'
+    data = invidious_fetch(path)
+    if data is None:
+        return jsonify({'error': 'Could not fetch trending videos'}), 502
+    return jsonify(data)
+
+
+@app.route('/api/invidious-search')
+def invidious_search():
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({'error': 'Missing q parameter'}), 400
+    sort_by = request.args.get('sort_by', 'relevance')
+    date = request.args.get('date', '')
+    path = f'/api/v1/search?q={query}&type=video&sort_by={sort_by}'
+    if date:
+        path += f'&date={date}'
+    data = invidious_fetch(path)
+    if data is None:
+        return jsonify({'error': 'Could not fetch search results'}), 502
+    return jsonify(data)
 
 
 # ─── API: Cookies ────────────────────────────────────────────────────────────

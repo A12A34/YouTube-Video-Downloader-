@@ -115,10 +115,56 @@
                     </button>
                 </div>
 
+                <div class="search-filters">
+                    <div class="filter-group">
+                        <label for="searchSort">Sort by:</label>
+                        <select id="searchSort">
+                            <option value="relevance">Relevance</option>
+                            <option value="rating">Rating</option>
+                            <option value="upload_date">Upload Date</option>
+                            <option value="view_count">View Count</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="searchDate">Date:</label>
+                        <select id="searchDate">
+                            <option value="">Any time</option>
+                            <option value="hour">Last hour</option>
+                            <option value="today">Today</option>
+                            <option value="week">This week</option>
+                            <option value="month">This month</option>
+                            <option value="year">This year</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div id="searchStatus" class="status-message"></div>
 
                 <!-- Search Results -->
                 <div id="searchResults" class="search-results"></div>
+            </div>
+
+            <!-- Popular Videos -->
+            <div class="card feed-card">
+                <div class="feed-header">
+                    <h2>Popular Videos</h2>
+                    <button onclick="loadPopularVideos()" class="btn btn-secondary btn-sm">Refresh</button>
+                </div>
+                <div id="popularResults" class="search-results"></div>
+            </div>
+
+            <!-- Trending Videos -->
+            <div class="card feed-card">
+                <div class="feed-header">
+                    <h2>Trending</h2>
+                    <div class="trending-categories">
+                        <button class="trending-cat-btn active" data-category="default" onclick="loadTrendingVideos('default')">All</button>
+                        <button class="trending-cat-btn" data-category="music" onclick="loadTrendingVideos('music')">Music</button>
+                        <button class="trending-cat-btn" data-category="gaming" onclick="loadTrendingVideos('gaming')">Gaming</button>
+                        <button class="trending-cat-btn" data-category="movies" onclick="loadTrendingVideos('movies')">Movies</button>
+                    </div>
+                </div>
+                <div id="trendingResults" class="search-results"></div>
             </div>
         </div>
 
