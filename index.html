@@ -79,6 +79,9 @@
                                 <label for="qualitySelect">Quality:</label>
                                 <select id="qualitySelect">
                                     <option value="best">Best Quality</option>
+                                    <option value="2160">4K (2160p)</option>
+                                    <option value="1440">1440p</option>
+                                    <option value="1080" selected>1080p</option>
                                     <option value="720">720p</option>
                                     <option value="480">480p</option>
                                     <option value="360">360p</option>
@@ -92,12 +95,32 @@
                             </div>
                             <div id="downloadProgress" class="download-progress hidden">
                                 <div class="progress-bar">
-                                    <div class="progress-fill" id="progressFill"></div>
+                                    <div class="progress-fill indeterminate" id="progressFill"></div>
                                 </div>
-                                <span id="progressText">Preparing download...</span>
+                                <div class="progress-details">
+                                    <span id="progressText">Preparing download...</span>
+                                    <span id="progressSpeed"></span>
+                                    <span id="progressEta"></span>
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Playlist Preview -->
+                <div id="playlistPreview" class="playlist-preview hidden">
+                    <div class="playlist-header-info">
+                        <h3 id="playlistTitle"></h3>
+                        <p id="playlistMeta"></p>
+                        <div class="playlist-actions">
+                            <label class="playlist-select-all">
+                                <input type="checkbox" id="playlistSelectAll" checked> Select All
+                            </label>
+                            <button onclick="savePlaylistToLibrary()" class="btn btn-success btn-sm">💾 Save Selected</button>
+                            <button onclick="downloadSelectedPlaylistItems()" class="btn btn-primary btn-sm">⬇️ Download Selected</button>
+                        </div>
+                    </div>
+                    <div id="playlistItems" class="playlist-items"></div>
                 </div>
             </div>
         </div>

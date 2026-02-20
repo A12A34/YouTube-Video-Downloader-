@@ -120,8 +120,36 @@ function isPipedMode() {
     return typeof CONFIG !== 'undefined' && CONFIG.mode === 'piped';
 }
 
+let currentPipedIndex = 0;
+
+function getPipedInstances() {
+    if (typeof CONFIG !== 'undefined' && CONFIG.pipedInstances && CONFIG.pipedInstances.length) {
+        return CONFIG.pipedInstances;
+    }
+    const fallback = (typeof CONFIG !== 'undefined' && CONFIG.pipedApiUrl) || 'https://pipedapi.kavin.rocks';
+    return [fallback];
+}
+
 function getPipedUrl() {
-    return (typeof CONFIG !== 'undefined' && CONFIG.pipedApiUrl) || 'https://pipedapi.kavin.rocks';
+    return getPipedInstances()[currentPipedIndex];
+}
+
+async function pipedFetchWithFallback(buildUrl) {
+    const instances = getPipedInstances();
+    for (let i = 0; i < instances.length; i++) {
+        const idx = (currentPipedIndex + i) % instances.length;
+        try {
+            const url = buildUrl(instances[idx]);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
+            currentPipedIndex = idx;
+            return data;
+        } catch (err) {
+            if (i === instances.length - 1) throw err;
+        }
+    }
 }
 
 // ─── Initialization ───────────────────────────────────────────────────────
@@ -203,6 +231,15 @@ function extractVideoId(url) {
     return null;
 }
 
+function isPlaylistUrl(input) {
+    return /[?&]list=/.test(input) || /youtube\.com\/playlist/.test(input);
+}
+
+function extractPlaylistId(url) {
+    const match = url.match(/[?&]list=([^&]+)/);
+    return match ? match[1] : null;
+}
+
 function formatDuration(seconds) {
     if (!seconds) return 'Unknown';
     const hours = Math.floor(seconds / 3600);
@@ -248,9 +285,7 @@ function escapeHtml(str) {
 // ─── Piped API Helpers ────────────────────────────────────────────────────
 
 async function pipedGetVideoInfo(videoId) {
-    const response = await fetch(`${getPipedUrl()}/streams/${videoId}`);
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
+    const data = await pipedFetchWithFallback(base => `${base}/streams/${videoId}`);
     return {
         id: videoId,
         title: data.title || 'Unknown',
@@ -263,9 +298,9 @@ async function pipedGetVideoInfo(videoId) {
 }
 
 async function pipedSearch(query, max) {
-    const response = await fetch(`${getPipedUrl()}/search?q=${encodeURIComponent(query)}&filter=videos`);
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
+    const data = await pipedFetchWithFallback(
+        base => `${base}/search?q=${encodeURIComponent(query)}&filter=videos`
+    );
     return (data.items || []).slice(0, max).map(item => {
         const id = item.url ? item.url.split('v=').pop().split('&')[0] : '';
         return {
@@ -280,13 +315,32 @@ async function pipedSearch(query, max) {
     });
 }
 
+async function pipedGetPlaylist(playlistId) {
+    const data = await pipedFetchWithFallback(base => `${base}/playlists/${playlistId}`);
+    const videos = (data.relatedStreams || []).map(item => {
+        const id = item.url ? item.url.split('v=').pop().split('&')[0] : '';
+        return {
+            id: id,
+            title: item.title || 'Unknown',
+            uploader: item.uploaderName || 'Unknown',
+            thumbnail: item.thumbnail || `https://img.youtube.com/vi/${id}/mqdefault.jpg`,
+            url: `https://www.youtube.com/watch?v=${id}`,
+            duration: item.duration || 0,
+        };
+    });
+    return {
+        title: data.name || 'Playlist',
+        uploader: data.uploader || 'Unknown',
+        count: videos.length,
+        videos: videos,
+    };
+}
+
 async function pipedDownload(videoUrl, quality) {
     const videoId = extractVideoId(videoUrl);
     if (!videoId) throw new Error('Invalid video URL');
 
-    const response = await fetch(`${getPipedUrl()}/streams/${videoId}`);
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
+    const data = await pipedFetchWithFallback(base => `${base}/streams/${videoId}`);
 
     let streamUrl;
     const title = data.title || 'video';
@@ -297,7 +351,7 @@ async function pipedDownload(videoUrl, quality) {
         if (streams.length === 0) throw new Error('No audio stream available');
         streamUrl = streams[0].url;
     } else {
-        const maxHeight = { 'best': 9999, '720': 720, '480': 480, '360': 360 }[quality] || 9999;
+        const maxHeight = { 'best': 9999, '2160': 2160, '1440': 1440, '1080': 1080, '720': 720, '480': 480, '360': 360 }[quality] || 9999;
 
         // Prefer muxed streams (has both video and audio)
         const muxed = (data.videoStreams || [])
@@ -351,13 +405,19 @@ async function getVideoInfo() {
 
     const previewEl = document.getElementById('videoPreview');
     if (previewEl) previewEl.classList.add('hidden');
+    const playlistEl = document.getElementById('playlistPreview');
+    if (playlistEl) playlistEl.classList.add('hidden');
 
-    const videoId = extractVideoId(input);
-
-    if (videoId) {
-        await fetchVideoInfo(videoId);
+    // Check for playlist URL first
+    if (isPlaylistUrl(input)) {
+        await fetchPlaylistInfo(input);
     } else {
-        await searchAndGetFirst(input);
+        const videoId = extractVideoId(input);
+        if (videoId) {
+            await fetchVideoInfo(videoId);
+        } else {
+            await searchAndGetFirst(input);
+        }
     }
 
     btn.disabled = false;
@@ -385,6 +445,10 @@ async function fetchVideoInfo(videoId) {
         }
         displayVideoPreview(currentVideo);
         showStatus('downloadStatus', 'Video information loaded!', 'success');
+        // Fetch actual available formats in local mode
+        if (!isPipedMode()) {
+            fetchAvailableFormats(currentVideo.url);
+        }
     } catch (error) {
         showStatus('downloadStatus', `Error: ${error.message}`, 'error');
     }
@@ -418,6 +482,7 @@ async function searchAndGetFirst(query) {
         };
 
         displayVideoPreview(currentVideo);
+        if (!isPipedMode()) fetchAvailableFormats(currentVideo.url);
         showStatus('downloadStatus', 'Video information loaded!', 'success');
     } catch (error) {
         showStatus('downloadStatus', `Error: ${error.message}`, 'error');
@@ -444,6 +509,46 @@ function displayVideoPreview(video) {
     if (preview) preview.classList.remove('hidden');
 }
 
+// ─── Fetch Available Formats ──────────────────────────────────────────────
+
+async function fetchAvailableFormats(videoUrl) {
+    try {
+        const response = await fetch(`/api/formats?url=${encodeURIComponent(videoUrl)}`);
+        const data = await response.json();
+        if (data.error || !data.formats || data.formats.length === 0) return;
+
+        const select = document.getElementById('qualitySelect');
+        if (!select) return;
+
+        const currentVal = select.value;
+        select.innerHTML = '<option value="best">Best Quality</option>';
+
+        data.formats.forEach(fmt => {
+            const option = document.createElement('option');
+            if (fmt.height === 0) {
+                option.value = 'audio';
+                option.textContent = `Audio Only${fmt.filesize ? ' (~' + formatBytes(fmt.filesize) + ')' : ''}`;
+            } else {
+                option.value = String(fmt.height);
+                let label = fmt.label;
+                if (fmt.fps && fmt.fps > 30) label += ` ${fmt.fps}fps`;
+                if (fmt.filesize) label += ` (~${formatBytes(fmt.filesize)})`;
+                option.textContent = label;
+            }
+            select.appendChild(option);
+        });
+
+        // Restore previous selection if still available, otherwise select 1080p
+        if (select.querySelector(`option[value="${currentVal}"]`)) {
+            select.value = currentVal;
+        } else if (select.querySelector('option[value="1080"]')) {
+            select.value = '1080';
+        }
+    } catch {
+        // Keep the static dropdown on failure
+    }
+}
+
 // ─── Actions ───────────────────────────────────────────────────────────────
 
 function saveToLibrary() {
@@ -462,6 +567,13 @@ function saveToLibrary() {
     }
 }
 
+function formatBytes(bytes) {
+    if (!bytes) return '';
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return bytes + ' B';
+}
+
 async function downloadVideo() {
     if (!currentVideo) {
         showStatus('downloadStatus', 'No video selected', 'error');
@@ -469,42 +581,106 @@ async function downloadVideo() {
     }
 
     const quality = document.getElementById('qualitySelect').value;
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const progressSpeed = document.getElementById('progressSpeed');
+    const progressEta = document.getElementById('progressEta');
 
     showDownloadProgress(true);
-    showStatus('downloadStatus', 'Download started! This may take a moment...', 'info');
+    if (progressFill) {
+        progressFill.classList.add('indeterminate');
+        progressFill.style.width = '';
+    }
+    if (progressText) progressText.textContent = 'Preparing download...';
+    if (progressSpeed) progressSpeed.textContent = '';
+    if (progressEta) progressEta.textContent = '';
 
     try {
         if (isPipedMode()) {
             await pipedDownload(currentVideo.url, quality);
             showStatus('downloadStatus', 'Download started!', 'success');
-        } else {
-            const downloadUrl = `/api/download?url=${encodeURIComponent(currentVideo.url)}&quality=${quality}`;
-            const response = await fetch(downloadUrl);
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || 'Download failed');
-            }
-
-            const blob = await response.blob();
-            const disposition = response.headers.get('Content-Disposition') || '';
-            const filenameMatch = disposition.match(/filename="?(.+?)"?$/);
-            const filename = filenameMatch ? filenameMatch[1] : `${currentVideo.title}.mp4`;
-
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-
-            showStatus('downloadStatus', 'Download complete!', 'success');
+            showDownloadProgress(false);
+            return;
         }
+
+        // Start background download with SSE progress tracking
+        const startResp = await fetch('/api/download-start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: currentVideo.url, quality }),
+        });
+        const startData = await startResp.json();
+        if (startData.error) throw new Error(startData.error);
+        const jobId = startData.job_id;
+
+        // Listen to SSE progress events
+        const completedJobId = await new Promise((resolve, reject) => {
+            const evtSource = new EventSource(`/api/download-progress/${jobId}`);
+
+            evtSource.onmessage = (event) => {
+                const d = JSON.parse(event.data);
+
+                if (d.status === 'downloading') {
+                    if (progressFill) {
+                        progressFill.classList.remove('indeterminate');
+                        progressFill.style.width = d.percent + '%';
+                    }
+                    const dlText = d.total > 0
+                        ? `${formatBytes(d.downloaded)} / ${formatBytes(d.total)} (${d.percent}%)`
+                        : `${formatBytes(d.downloaded)} (${d.percent}%)`;
+                    if (progressText) progressText.textContent = dlText;
+                    if (progressSpeed) progressSpeed.textContent = d.speed ? `${formatBytes(d.speed)}/s` : '';
+                    if (progressEta) progressEta.textContent = d.eta ? `ETA: ${d.eta}s` : '';
+                } else if (d.status === 'processing') {
+                    if (progressFill) {
+                        progressFill.classList.remove('indeterminate');
+                        progressFill.style.width = '100%';
+                    }
+                    if (progressText) progressText.textContent = 'Merging audio & video...';
+                    if (progressSpeed) progressSpeed.textContent = '';
+                    if (progressEta) progressEta.textContent = '';
+                } else if (d.status === 'complete') {
+                    evtSource.close();
+                    resolve(jobId);
+                } else if (d.status === 'error') {
+                    evtSource.close();
+                    reject(new Error(d.message || 'Download failed'));
+                }
+            };
+
+            evtSource.onerror = () => {
+                evtSource.close();
+                reject(new Error('Connection to download progress lost'));
+            };
+        });
+
+        // Download the completed file
+        if (progressText) progressText.textContent = 'Saving file...';
+        const fileResp = await fetch(`/api/download-file/${completedJobId}`);
+        if (!fileResp.ok) throw new Error('Failed to retrieve file');
+
+        const blob = await fileResp.blob();
+        const disposition = fileResp.headers.get('Content-Disposition') || '';
+        const filenameMatch = disposition.match(/filename="?(.+?)"?$/);
+        const filename = filenameMatch ? filenameMatch[1] : `${currentVideo.title}.mp4`;
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        showStatus('downloadStatus', 'Download complete!', 'success');
     } catch (error) {
         showStatus('downloadStatus', error.message, 'error');
     } finally {
+        if (progressFill) {
+            progressFill.classList.remove('indeterminate');
+            progressFill.style.width = '0%';
+        }
         showDownloadProgress(false);
     }
 }
@@ -516,6 +692,163 @@ function watchVideo() {
     }
 
     playVideoInModal(currentVideo);
+}
+
+// ─── Playlist ───────────────────────────────────────────────────────────────
+
+async function fetchPlaylistInfo(input) {
+    try {
+        let playlist;
+        if (isPipedMode()) {
+            const playlistId = extractPlaylistId(input);
+            if (!playlistId) throw new Error('Could not extract playlist ID');
+            playlist = await pipedGetPlaylist(playlistId);
+        } else {
+            const response = await fetch(`/api/playlist?url=${encodeURIComponent(input)}`);
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
+            playlist = { title: data.title, uploader: data.uploader, count: data.count, videos: data.videos };
+        }
+
+        displayPlaylistPreview(playlist);
+        showStatus('downloadStatus', `Playlist loaded: ${playlist.count} videos`, 'success');
+    } catch (error) {
+        showStatus('downloadStatus', `Error loading playlist: ${error.message}`, 'error');
+    }
+}
+
+function displayPlaylistPreview(playlist) {
+    const container = document.getElementById('playlistPreview');
+    const titleEl = document.getElementById('playlistTitle');
+    const metaEl = document.getElementById('playlistMeta');
+    const itemsEl = document.getElementById('playlistItems');
+    const selectAll = document.getElementById('playlistSelectAll');
+
+    if (!container || !titleEl || !metaEl || !itemsEl) return;
+
+    titleEl.textContent = playlist.title;
+    metaEl.textContent = `${playlist.uploader} \u00B7 ${playlist.count} videos`;
+
+    itemsEl.innerHTML = '';
+    (playlist.videos || []).forEach((video, index) => {
+        const item = document.createElement('div');
+        item.className = 'playlist-item';
+        item.innerHTML = `
+            <span class="playlist-item-number">${index + 1}</span>
+            <input type="checkbox" class="playlist-item-check" data-index="${index}" checked>
+            <img src="${escapeHtml(video.thumbnail)}" alt="${escapeHtml(video.title)}" loading="lazy">
+            <div class="playlist-item-info">
+                <h4>${escapeHtml(video.title)}</h4>
+                <span>${escapeHtml(video.uploader || '')}${video.duration ? ' \u00B7 ' + formatDuration(video.duration) : ''}</span>
+            </div>
+        `;
+        item.dataset.video = JSON.stringify(video);
+        itemsEl.appendChild(item);
+    });
+
+    if (selectAll) {
+        selectAll.checked = true;
+        selectAll.onchange = () => {
+            itemsEl.querySelectorAll('.playlist-item-check').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+        };
+    }
+
+    container.classList.remove('hidden');
+}
+
+function getSelectedPlaylistVideos() {
+    const itemsEl = document.getElementById('playlistItems');
+    if (!itemsEl) return [];
+    const selected = [];
+    itemsEl.querySelectorAll('.playlist-item').forEach(item => {
+        const cb = item.querySelector('.playlist-item-check');
+        if (cb && cb.checked) {
+            try {
+                selected.push(JSON.parse(item.dataset.video));
+            } catch { /* skip */ }
+        }
+    });
+    return selected;
+}
+
+async function downloadSelectedPlaylistItems() {
+    const videos = getSelectedPlaylistVideos();
+    if (videos.length === 0) {
+        showStatus('downloadStatus', 'No videos selected', 'error');
+        return;
+    }
+
+    const quality = document.getElementById('qualitySelect').value;
+    showStatus('downloadStatus', `Downloading ${videos.length} videos...`, 'info');
+
+    for (let i = 0; i < videos.length; i++) {
+        const video = videos[i];
+        const videoUrl = video.url || `https://www.youtube.com/watch?v=${video.id}`;
+        showStatus('downloadStatus', `Downloading (${i + 1}/${videos.length}): ${video.title}`, 'info');
+
+        try {
+            if (isPipedMode()) {
+                await pipedDownload(videoUrl, quality);
+            } else {
+                const downloadUrl = `/api/download?url=${encodeURIComponent(videoUrl)}&quality=${quality}`;
+                const response = await fetch(downloadUrl);
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Download failed');
+                }
+                const blob = await response.blob();
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const filenameMatch = disposition.match(/filename="?(.+?)"?$/);
+                const filename = filenameMatch ? filenameMatch[1] : `${video.title}.mp4`;
+
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        } catch (error) {
+            showStatus('downloadStatus', `Failed "${video.title}": ${error.message}`, 'error');
+        }
+
+        // Small delay between downloads
+        if (i < videos.length - 1) {
+            await new Promise(r => setTimeout(r, 1500));
+        }
+    }
+
+    showStatus('downloadStatus', `Downloaded ${videos.length} videos!`, 'success');
+}
+
+function savePlaylistToLibrary() {
+    const videos = getSelectedPlaylistVideos();
+    if (videos.length === 0) {
+        showStatus('downloadStatus', 'No videos selected', 'error');
+        return;
+    }
+
+    let added = 0;
+    videos.forEach(video => {
+        if (library.add({
+            id: video.id,
+            title: video.title,
+            uploader: video.uploader,
+            thumbnail: video.thumbnail,
+            url: video.url || `https://www.youtube.com/watch?v=${video.id}`,
+            duration: video.duration,
+            views: 0,
+        })) {
+            added++;
+        }
+    });
+
+    displayLibrary();
+    showStatus('downloadStatus', `Added ${added} videos to library (${videos.length - added} already existed)`, 'success');
 }
 
 // ─── Search ────────────────────────────────────────────────────────────────
