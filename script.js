@@ -1,3 +1,71 @@
+// ─── Invidious API Configuration ────────────────────────────────────────────
+const INVIDIOUS_INSTANCES = [
+    'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de',
+    'https://inv.tux.pizza',
+];
+let currentInstanceIndex = 0;
+
+function getInvidiousBase() {
+    return INVIDIOUS_INSTANCES[currentInstanceIndex];
+}
+
+function rotateInstance() {
+    currentInstanceIndex = (currentInstanceIndex + 1) % INVIDIOUS_INSTANCES.length;
+}
+
+async function invidiousFetch(path, retries = INVIDIOUS_INSTANCES.length) {
+    // Try local proxy first (avoids CORS issues)
+    const proxyMap = {
+        '/api/v1/popular': '/api/popular',
+        '/api/v1/trending': '/api/trending',
+    };
+    const proxyPath = Object.entries(proxyMap).find(([prefix]) => path === prefix || path.startsWith(prefix + '?'));
+    if (proxyPath) {
+        try {
+            const localPath = path.replace(proxyPath[0], proxyPath[1]);
+            const response = await fetch(localPath);
+            if (response.ok) return await response.json();
+        } catch { /* fall through to direct */ }
+    }
+    if (path.startsWith('/api/v1/search')) {
+        try {
+            const localPath = path.replace('/api/v1/search', '/api/invidious-search');
+            const response = await fetch(localPath);
+            if (response.ok) return await response.json();
+        } catch { /* fall through to direct */ }
+    }
+
+    // Direct Invidious API calls as fallback
+    for (let i = 0; i < retries; i++) {
+        try {
+            const url = `${getInvidiousBase()}${path}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+        } catch (err) {
+            rotateInstance();
+            if (i === retries - 1) throw err;
+        }
+    }
+}
+
+function mapInvidiousVideo(entry) {
+    const thumb = entry.videoThumbnails
+        ? (entry.videoThumbnails.find(t => t.quality === 'medium') || entry.videoThumbnails[0])
+        : null;
+    return {
+        id: entry.videoId,
+        title: entry.title || 'Unknown',
+        uploader: entry.author || 'Unknown',
+        duration: entry.lengthSeconds || 0,
+        view_count: entry.viewCount || 0,
+        thumbnail: thumb ? thumb.url : `https://img.youtube.com/vi/${entry.videoId}/mqdefault.jpg`,
+        url: `https://www.youtube.com/watch?v=${entry.videoId}`,
+        publishedText: entry.publishedText || '',
+    };
+}
+
 // Video Library Storage
 class VideoLibrary {
     constructor() {
@@ -115,6 +183,12 @@ function switchTab(tabName) {
 
     const activeBtn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
     if (activeBtn) activeBtn.classList.add('active');
+
+    // Load popular videos when search tab is opened for the first time
+    if (tabName === 'search' && !popularLoaded) {
+        loadPopularVideos();
+        loadTrendingVideos('default');
+    }
 }
 
 function extractVideoId(url) {
@@ -322,10 +396,9 @@ async function searchAndGetFirst(query) {
         if (isPipedMode()) {
             results = await pipedSearch(query, 1);
         } else {
-            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&max=1`);
-            const data = await response.json();
-            if (data.error) throw new Error(data.error);
-            results = data.results || [];
+            const data = await invidiousFetch(`/api/v1/search?q=${encodeURIComponent(query)}&type=video`);
+            const videos = data.filter(e => e.type === 'video');
+            results = videos.map(mapInvidiousVideo);
         }
 
         if (results.length === 0) {
@@ -338,8 +411,8 @@ async function searchAndGetFirst(query) {
             id: first.id,
             title: first.title,
             uploader: first.uploader,
-            thumbnail: first.thumbnail || `https://img.youtube.com/vi/${first.id}/maxresdefault.jpg`,
-            url: first.url || `https://www.youtube.com/watch?v=${first.id}`,
+            thumbnail: first.thumbnail,
+            url: first.url,
             duration: first.duration,
             views: first.view_count || first.views,
         };
@@ -468,11 +541,17 @@ async function searchVideos() {
         if (isPipedMode()) {
             results = await pipedSearch(query, 8);
         } else {
-            const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&max=8`);
-            const data = await response.json();
-            if (data.error) throw new Error(data.error);
-            results = data.results || [];
+            const sortParam = document.getElementById('searchSort')?.value || 'relevance';
+            const dateParam = document.getElementById('searchDate')?.value || '';
+            let apiPath = `/api/v1/search?q=${encodeURIComponent(query)}&type=video&sort_by=${sortParam}`;
+            if (dateParam) apiPath += `&date=${dateParam}`;
+
+            const data = await invidiousFetch(apiPath);
+            results = data
+                .filter(e => e.type === 'video')
+                .map(mapInvidiousVideo);
         }
+
 
         displaySearchResults(results);
         showStatus('searchStatus', `Found ${results.length} results`, 'success');
@@ -507,12 +586,16 @@ function createResultCard(video) {
     card.className = 'result-card';
 
     const videoData = encodeURIComponent(JSON.stringify(video));
+    const meta = [escapeHtml(video.uploader || 'Unknown')];
+    if (video.duration) meta.push(formatDuration(video.duration));
+    if (video.view_count) meta.push(formatViews(video.view_count) + ' views');
+    if (video.publishedText) meta.push(escapeHtml(video.publishedText));
 
     card.innerHTML = `
-        <img src="${escapeHtml(video.thumbnail)}" alt="${escapeHtml(video.title)}">
+        <img src="${escapeHtml(video.thumbnail)}" alt="${escapeHtml(video.title)}" loading="lazy">
         <div class="result-card-body">
             <h4>${escapeHtml(video.title)}</h4>
-            <p>${escapeHtml(video.uploader || 'Unknown')} · ${formatDuration(video.duration)}</p>
+            <p>${meta.join(' · ')}</p>
             <div class="result-card-actions">
                 <button data-video="${videoData}" onclick="addSearchResultFromBtn(this)" class="btn btn-success">💾</button>
                 <button data-video="${videoData}" onclick="playSearchResultFromBtn(this)" class="btn btn-primary">▶️</button>
@@ -584,6 +667,63 @@ function addSearchResultToLibrary(video) {
     } else {
         showStatus('searchStatus', 'This video is already in your library', 'info');
     }
+}
+
+// ─── Popular & Trending Feeds ───────────────────────────────────────────────
+
+let popularLoaded = false;
+let trendingCategory = 'default';
+
+async function loadPopularVideos() {
+    const container = document.getElementById('popularResults');
+    if (!container) return;
+
+    container.innerHTML = '<div class="feed-loading">Loading popular videos...</div>';
+
+    try {
+        const data = await invidiousFetch('/api/v1/popular');
+        const videos = data.map(mapInvidiousVideo);
+        displayFeedResults(container, videos);
+        popularLoaded = true;
+    } catch (error) {
+        container.innerHTML = `<div class="empty-state"><p>Could not load popular videos: ${escapeHtml(error.message)}</p></div>`;
+    }
+}
+
+async function loadTrendingVideos(category) {
+    trendingCategory = category || 'default';
+    const container = document.getElementById('trendingResults');
+    if (!container) return;
+
+    // Highlight active category button
+    document.querySelectorAll('.trending-cat-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.category === trendingCategory);
+    });
+
+    container.innerHTML = '<div class="feed-loading">Loading trending videos...</div>';
+
+    try {
+        const typePart = trendingCategory !== 'default' ? `?type=${trendingCategory}` : '';
+        const data = await invidiousFetch(`/api/v1/trending${typePart}`);
+        const videos = data.map(mapInvidiousVideo);
+        displayFeedResults(container, videos);
+    } catch (error) {
+        container.innerHTML = `<div class="empty-state"><p>Could not load trending videos: ${escapeHtml(error.message)}</p></div>`;
+    }
+}
+
+function displayFeedResults(container, videos) {
+    container.innerHTML = '';
+
+    if (!videos.length) {
+        container.innerHTML = '<div class="empty-state"><p>No videos found</p></div>';
+        return;
+    }
+
+    videos.forEach(video => {
+        const card = createResultCard(video);
+        container.appendChild(card);
+    });
 }
 
 // ─── Library ───────────────────────────────────────────────────────────────

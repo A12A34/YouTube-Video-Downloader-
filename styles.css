@@ -636,6 +636,109 @@ header h1 {
     margin-top: 20px;
 }
 
+/* Search Filters */
+.search-filters {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filter-group label {
+    font-weight: 600;
+    color: #333;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.filter-group select {
+    padding: 8px 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
+    background: #f8f9fa;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.filter-group select:focus {
+    outline: none;
+    border-color: #667eea;
+    background: white;
+    box-shadow: 0 2px 10px rgba(102, 126, 234, 0.1);
+}
+
+/* Feed Cards */
+.feed-card {
+    margin-top: 20px;
+}
+
+.feed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.feed-header h2 {
+    margin-bottom: 0;
+}
+
+.btn-sm {
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+/* Trending Categories */
+.trending-categories {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.trending-cat-btn {
+    padding: 8px 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 20px;
+    background: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: #555;
+}
+
+.trending-cat-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+    background: rgba(102, 126, 234, 0.05);
+}
+
+.trending-cat-btn.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: transparent;
+    box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+}
+
+/* Feed Loading */
+.feed-loading {
+    text-align: center;
+    padding: 40px 20px;
+    color: #666;
+    font-size: 15px;
+    font-weight: 500;
+}
+
 .result-card {
     background: white;
     border-radius: 15px;
@@ -976,6 +1079,29 @@ header h1 {
 
     .quality-selector select {
         width: 100%;
+    }
+
+    .search-filters {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .filter-group {
+        width: 100%;
+    }
+
+    .filter-group select {
+        flex: 1;
+    }
+
+    .trending-categories {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .feed-header {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }
 
