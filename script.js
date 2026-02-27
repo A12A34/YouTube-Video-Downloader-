@@ -120,6 +120,10 @@ function isPipedMode() {
     return typeof CONFIG !== 'undefined' && CONFIG.mode === 'piped';
 }
 
+function isLocalMode() {
+    return typeof CONFIG !== 'undefined' && CONFIG.mode === 'local';
+}
+
 let currentPipedIndex = 0;
 
 function getPipedInstances() {

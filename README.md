@@ -1,3 +1,63 @@
+## YouTube Downloader & Library
+
+This project lets you search, preview, download, and save YouTube videos to a simple library.
+
+There are two ways to run it:
+
+### 1. Local mode (recommended)
+
+Local mode uses the bundled Flask backend and `yt-dlp` for reliable downloads and format selection.
+
+1. Install Python 3 and `ffmpeg` (for best quality and audio+video merging).
+2. Install Python dependencies:
+
+```bash
+pip install flask yt-dlp requests
+```
+
+3. Start the backend from the project folder:
+
+```bash
+python server.py
+```
+
+4. Open your browser at:
+
+- `http://127.0.0.1:8000` or
+- `http://localhost:8000`
+
+In local mode:
+
+- `config.js` has `CONFIG.mode = 'local'`.
+- The frontend talks to Flask endpoints such as `/api/info`, `/api/download-start`, `/api/download-progress/<job_id>`, and `/api/download-file/<job_id>`.
+- You can optionally place a `cookies.txt` file in the project folder (or upload it via the UI) to enable age‑restricted or authenticated downloads.
+
+### 2. Piped (static) mode
+
+Piped mode is intended for static hosting (for example GitHub Pages) where you **do not** run the Flask backend. Downloads and metadata come from public Piped API instances.
+
+To enable Piped mode:
+
+1. Edit `config.js` and set:
+
+```js
+mode: 'piped',
+```
+
+2. Serve the static files (`index.html`, `script.js`, `config.js`, `styles.css`) from any static host.
+
+In Piped mode:
+
+- The frontend calls the Piped API instances defined in `CONFIG.pipedInstances`.
+- The cookie banner is hidden, because no local `cookies.txt` is needed.
+
+### Switching modes
+
+- **Local development / personal use** → keep `CONFIG.mode = 'local'` and run `python server.py`.
+- **Static hosting without a backend** → set `CONFIG.mode = 'piped'` and deploy the static files.
+
+You only need to change the `mode` value in `config.js` when switching between these two setups.
+
 # YouTube Downloader & Library
 
 A modern, fully-featured YouTube video downloader and library manager built with pure HTML, CSS, and JavaScript.

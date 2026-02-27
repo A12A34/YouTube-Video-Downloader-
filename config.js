@@ -1,6 +1,8 @@
 const CONFIG = {
-    // API mode: 'piped' for GitHub Pages (no backend), 'local' for Flask server
-    mode: 'piped',
+    // API mode:
+    // - 'local' → use Flask backend at the same origin (recommended when running `python server.py`)
+    // - 'piped' → use public Piped instances only (for static hosting like GitHub Pages)
+    mode: 'local',
 
     // Piped API instances with automatic fallback (used in 'piped' mode)
     // If one instance is down, the next one is tried automatically

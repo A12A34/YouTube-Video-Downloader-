@@ -52,7 +52,7 @@
         <div id="download" class="tab-content active">
             <div class="card">
                 <h2>Download Video</h2>
-                <p class="description">Enter a YouTube URL or search by video name</p>
+                <p class="description">Step 1: Paste a YouTube URL or type a video name. Step 2: Click <strong>Get Video</strong>. Step 3: Choose quality, then click <strong>Download</strong>.</p>
 
                 <div class="input-group">
                     <input type="text" id="downloadInput" placeholder="Paste YouTube URL or enter video name..." autocomplete="off">
@@ -89,9 +89,9 @@
                                 </select>
                             </div>
                             <div class="preview-actions">
-                                <button onclick="saveToLibrary()" class="btn btn-success">💾 Save to Library</button>
-                                <button onclick="downloadVideo()" class="btn btn-primary">⬇️ Download</button>
-                                <button onclick="watchVideo()" class="btn btn-secondary">▶️ Watch Now</button>
+                <button onclick="saveToLibrary()" class="btn btn-success" aria-label="Save video to your library">💾 Save to Library</button>
+                <button onclick="downloadVideo()" class="btn btn-primary" aria-label="Download this video">⬇️ Download</button>
+                <button onclick="watchVideo()" class="btn btn-secondary" aria-label="Watch this video now">▶️ Watch Now</button>
                             </div>
                             <div id="downloadProgress" class="download-progress hidden">
                                 <div class="progress-bar">
@@ -128,8 +128,8 @@
         <!-- Search Tab -->
         <div id="search" class="tab-content">
             <div class="card">
-                <h2>Search YouTube Videos</h2>
-                <p class="description">Find videos by searching with keywords</p>
+                    <h2>Search YouTube Videos</h2>
+                    <p class="description">Search YouTube, then save, watch, or download any result.</p>
 
                 <div class="input-group">
                     <input type="text" id="searchInput" placeholder="Search YouTube videos..." autocomplete="off">
@@ -172,7 +172,7 @@
             <div class="card feed-card">
                 <div class="feed-header">
                     <h2>Popular Videos</h2>
-                    <button onclick="loadPopularVideos()" class="btn btn-secondary btn-sm">Refresh</button>
+                        <button onclick="loadPopularVideos()" class="btn btn-secondary btn-sm" aria-label="Reload popular videos">Refresh</button>
                 </div>
                 <div id="popularResults" class="search-results"></div>
             </div>
@@ -182,10 +182,10 @@
                 <div class="feed-header">
                     <h2>Trending</h2>
                     <div class="trending-categories">
-                        <button class="trending-cat-btn active" data-category="default" onclick="loadTrendingVideos('default')">All</button>
-                        <button class="trending-cat-btn" data-category="music" onclick="loadTrendingVideos('music')">Music</button>
-                        <button class="trending-cat-btn" data-category="gaming" onclick="loadTrendingVideos('gaming')">Gaming</button>
-                        <button class="trending-cat-btn" data-category="movies" onclick="loadTrendingVideos('movies')">Movies</button>
+                        <button class="trending-cat-btn active" data-category="default" onclick="loadTrendingVideos('default')" aria-label="Show all trending videos">All</button>
+                        <button class="trending-cat-btn" data-category="music" onclick="loadTrendingVideos('music')" aria-label="Show trending music videos">Music</button>
+                        <button class="trending-cat-btn" data-category="gaming" onclick="loadTrendingVideos('gaming')" aria-label="Show trending gaming videos">Gaming</button>
+                        <button class="trending-cat-btn" data-category="movies" onclick="loadTrendingVideos('movies')" aria-label="Show trending movie videos">Movies</button>
                     </div>
                 </div>
                 <div id="trendingResults" class="search-results"></div>
@@ -197,8 +197,8 @@
             <div class="card">
                 <div class="library-header">
                     <div>
-                        <h2>My Video Library</h2>
-                        <p class="description">Your saved videos</p>
+                    <h2>My Video Library</h2>
+                    <p class="description">Saved videos you can re-watch or download again later.</p>
                     </div>
                     <button onclick="clearLibrary()" class="btn btn-danger">🗑️ Clear All</button>
                 </div>
